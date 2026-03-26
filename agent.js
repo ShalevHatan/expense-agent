@@ -37,16 +37,18 @@ async function answerQuery(message) {
     max_tokens: 300,
     messages: [{
       role: 'user',
-      content: 'התאריך היום ' + today + '. כתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date). החזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
+      content: 'התאריך היום ' + today + '.\nכתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date).\nהשתמש ב-SUM(amount) as total כשצריך סכום.\nהשתמש ב-date(date) = date("now") כשצריך היום.\nהחזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
     }]
   });
   const sql = response.content[0].text.replace(/```sql|```/g, '').trim();
+  console.log('SQL:', sql);
   const rows = queryExpenses(sql);
   if (!rows || rows.length === 0) return 'לא נמצאו הוצאות.';
   let text = '';
   rows.forEach(r => {
     Object.keys(r).forEach(k => {
-      text += k + ': ' + (r[k] !== null ? r[k] : 0) + '\n';
+      const val = r[k] !== null ? r[k] : 0;
+      text += k + ': ' + val + '\n';
     });
   });
   return text.trim();
