@@ -1,3 +1,4 @@
+cat > ~/expense-agent/agent.js << 'ENDOFFILE'
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const { saveExpense, deleteLastExpense, queryExpenses, getWeeklySummary, getMonthlySummary } = require('./database');
@@ -32,7 +33,8 @@ async function parseExpenses(message) {
     messages: [{
       role: 'user',
       content: `חלץ מההודעה רשימת הוצאות. יכולות להיות אחת או יותר.
-החזר JSON בלבד, ללא טקסט נוסף, בפורמט הזה:
+חשוב מאוד: החזר תמיד מערך JSON, גם אם יש רק הוצאה אחת.
+החזר JSON בלבד, ללא טקסט נוסף, ללא backticks, בפורמט הזה:
 [{"amount": 50, "category": "אוכל", "note": "קפה"}, {"amount": 200, "category": "דלק", "note": "תדלוק"}]
 
 קטגוריות אפשריות: אוכל, קניות, דלק, בידור, בריאות, תחבורה, אחר
@@ -41,7 +43,8 @@ async function parseExpenses(message) {
     }]
   });
   const clean = response.content[0].text.replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
+  const parsed = JSON.parse(clean);
+  return Array.isArray(parsed) ? parsed : [parsed];
 }
 
 async function answerQuery(message) {
@@ -54,7 +57,7 @@ async function answerQuery(message) {
       content: `התאריך היום הוא ${today}.
 כתוב שאילתת SQLite אחת שעונה על השאלה הבאה על טבלת expenses.
 הטבלה מכילה עמודות: id, amount, category, note, date.
-החזר רק את שאילתת ה-SQL, ללא שום דבר אחר.
+החזר רק את שאילתת ה-SQL, ללא שום דבר אחר, ללא backticks.
 
 שאלה: "${message}"`
     }]
@@ -115,23 +118,4 @@ async function handleMessage(message) {
 }
 
 module.exports = { handleMessage };
-
-  if (message === 'סיכום חודשי') {
-    const rows = getMonthlySummary();
-    if (rows.length === 0) return 'אין הוצאות החודש עדיין.';
-    let text = 'סיכום חודשי:\n';
-    let total = 0;
-    rows.forEach(r => {
-      text += `${r.category}: ${r.total} ₪\n`;
-      total += r.total;
-    });
-    text += `סה"כ: ${total} ₪`;
-    return text;
-  }
-
-  const expense = await parseExpense(message);
-  saveExpense(expense.amount, expense.category, expense.note);
-  return `נשמר! ${expense.note || expense.category} — ${expense.amount} ₪`;
-}
-
-module.exports = { handleMessage };
+ENDOFFILE
