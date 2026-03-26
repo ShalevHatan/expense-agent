@@ -31,13 +31,13 @@ async function parseExpenses(message) {
 }
 
 async function answerQuery(message) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleDateString('en-CA', {timeZone: 'Asia/Jerusalem'});
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 300,
     messages: [{
       role: 'user',
-      content: 'התאריך היום ' + today + '.\nכתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date).\nהשתמש ב-SUM(amount) as total כשצריך סכום.\nהשתמש ב-date(date) = date("now") כשצריך היום.\nהחזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
+      content: 'התאריך היום בישראל הוא ' + today + '.\nכתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date).\nהשתמש ב-SUM(amount) as total כשצריך סכום.\nכשצריך סינון לפי היום השתמש ב: date LIKE "' + today + '%"\nהחזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
     }]
   });
   const sql = response.content[0].text.replace(/```sql|```/g, '').trim();
