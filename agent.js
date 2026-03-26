@@ -37,12 +37,13 @@ async function answerQuery(message) {
     max_tokens: 300,
     messages: [{
       role: 'user',
-      content: 'התאריך היום בישראל הוא ' + today + '.\nכתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date).\nהשתמש ב-SUM(amount) as total כשצריך סכום.\nכשצריך סינון לפי היום השתמש ב: date LIKE "' + today + '%"\nהחזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
+      content: 'התאריך היום בישראל הוא ' + today + '.\nכתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date).\nחשוב מאוד: השתמש תמיד בגרשיים בודדים בתוך SQL, לא כפולים.\nלדוגמה: date LIKE \'' + today + '%\' ולא date LIKE "' + today + '%"\nהשתמש ב-SUM(amount) as total כשצריך סכום.\nהחזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
     }]
   });
   const sql = response.content[0].text.replace(/```sql|```/g, '').trim();
-  console.log('SQL:', sql);
-  const rows = queryExpenses(sql);
+  const fixedSql = sql.replace(/"/g, "'");
+  console.log('SQL:', fixedSql);
+  const rows = queryExpenses(fixedSql);
   if (!rows || rows.length === 0) return 'לא נמצאו הוצאות.';
   let text = '';
   rows.forEach(r => {
