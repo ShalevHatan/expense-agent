@@ -10,7 +10,7 @@ async function classifyMessage(message) {
     max_tokens: 50,
     messages: [{
       role: 'user',
-      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE\n- DELETE\n- QUERY\n- WEEKLY\n- MONTHLY\n\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
+      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה או כמה הוצאות\n- DELETE: מחיקת הוצאה\n- QUERY: שאלה ספציפית על הוצאות לפי תאריך או קטגוריה\n- WEEKLY: בקשה לסיכום שבועי כללי\n- MONTHLY: בקשה לסיכום חודשי כללי\n\nשים לב: "כמה הוצאתי היום" או "כמה הוצאתי על X" זה QUERY ולא WEEKLY.\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
     }]
   });
   return response.content[0].text.trim();
@@ -56,6 +56,7 @@ async function answerQuery(message) {
 
 async function handleMessage(message) {
   const type = await classifyMessage(message);
+  console.log('סוג:', type);
 
   if (type === 'WEEKLY') {
     const rows = getWeeklySummary();
