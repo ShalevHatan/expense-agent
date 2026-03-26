@@ -5,7 +5,8 @@ const cron = require('node-cron');
 const { handleMessage, generateWeeklyTaskFeedback } = require('./agent');
 const { getWeeklySummary, getMonthlySummary } = require('./database');
 const { addWater, getTodayWater, resetDay } = require('./water');
-const { getTasks, getPendingTasks, getTodayDate } = require('./tasks');
+const { getTasks, getPendingTasks, getTodayDate, addTask } = require('./tasks');
+const { getTodayClasses } = require('./schedule');
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -78,6 +79,14 @@ cron.schedule('0 10,14,16,18,20,22 * * *', async () => {
 
 cron.schedule('30 7 * * *', async () => {
   const today = getTodayDate();
+
+  const classes = getTodayClasses();
+  classes.forEach(c => {
+    const task = c.course + ' ' + c.type + ' ' + c.start_time + '-' + c.end_time;
+    const tip = 'הגע 5 דקות לפני תחילת השיעור';
+    addTask(task, tip, today);
+  });
+
   const tasks = getTasks(today);
   if (tasks.length > 0) {
     let text = 'בוקר טוב! המשימות שלך להיום:\n';
