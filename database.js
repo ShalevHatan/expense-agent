@@ -19,6 +19,21 @@ function saveExpense(amount, category, note) {
   return stmt.run(amount, category, note);
 }
 
+function deleteLastExpense() {
+  const last = db.prepare('SELECT id FROM expenses ORDER BY id DESC LIMIT 1').get();
+  if (!last) return false;
+  db.prepare('DELETE FROM expenses WHERE id = ?').run(last.id);
+  return true;
+}
+
+function queryExpenses(sql) {
+  try {
+    return db.prepare(sql).all();
+  } catch (e) {
+    return null;
+  }
+}
+
 function getWeeklySummary() {
   return db.prepare(`
     SELECT category, SUM(amount) as total
@@ -39,4 +54,4 @@ function getMonthlySummary() {
   `).all();
 }
 
-module.exports = { saveExpense, getWeeklySummary, getMonthlySummary };
+module.exports = { saveExpense, deleteLastExpense, queryExpenses, getWeeklySummary, getMonthlySummary };
