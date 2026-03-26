@@ -1,6 +1,7 @@
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const { saveExpense, deleteLastExpense, queryExpenses, getWeeklySummary, getMonthlySummary } = require('./database');
+const { addTask, getPendingTasks, markDone, getTasks, getTodayDate, getTomorrowDate } = require('./tasks');
 
 const client = new Anthropic();
 
@@ -10,7 +11,7 @@ async function classifyMessage(message) {
     max_tokens: 50,
     messages: [{
       role: 'user',
-      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה או כמה הוצאות\n- DELETE: מחיקת הוצאה\n- QUERY: שאלה ספציפית על הוצאות לפי תאריך או קטגוריה\n- WEEKLY: בקשה לסיכום שבועי כללי\n- MONTHLY: בקשה לסיכום חודשי כללי\n\nשים לב: "כמה הוצאתי היום" או "כמה הוצאתי על X" זה QUERY ולא WEEKLY.\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
+      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה כספית\n- DELETE: מחיקת הוצאה\n- QUERY: שאלה על הוצאות\n- WEEKLY: סיכום שבועי הוצאות\n- MONTHLY: סיכום חודשי הוצאות\n- DONE_TASKS: דיווח על משימות שסיים (מכיל מילים כמו סיימתי/עשיתי/גמרתי או מספרים של משימות)\n- ADD_TASK: הוספת משימה חדשה לרשימה\n- TOMORROW_TASKS: רשימת משימות למחר\n\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
     }]
   });
   return response.content[0].text.trim();
@@ -37,7 +38,7 @@ async function answerQuery(message) {
     max_tokens: 300,
     messages: [{
       role: 'user',
-      content: 'התאריך היום בישראל הוא ' + today + '.\nכתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date).\nחשוב מאוד: השתמש תמיד בגרשיים בודדים בתוך SQL, לא כפולים.\nלדוגמה: date LIKE \'' + today + '%\' ולא date LIKE "' + today + '%"\nהשתמש ב-SUM(amount) as total כשצריך סכום.\nהחזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
+      content: 'התאריך היום בישראל הוא ' + today + '.\nכתוב שאילתת SQLite על טבלת expenses (עמודות: id, amount, category, note, date).\nהשתמש ב-SUM(amount) as total כשצריך סכום.\nכשצריך סינון לפי היום השתמש ב: date LIKE \'' + today + '%\'\nהחזר SQL בלבד ללא backticks.\n\nשאלה: "' + message + '"'
     }]
   });
   const sql = response.content[0].text.replace(/```sql|```/g, '').trim();
@@ -53,6 +54,50 @@ async function answerQuery(message) {
     });
   });
   return text.trim();
+}
+
+async function parseTasks(message, date) {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1000,
+    messages: [{
+      role: 'user',
+      content: 'חלץ רשימת משימות מהטקסט הבא והוסף טיפ קצר ומועיל לכל משימה.\nהחזר JSON בלבד ללא backticks:\n[{"task": "שם המשימה", "tip": "טיפ קצר"}]\n\nטקסט: "' + message + '"'
+    }]
+  });
+  const clean = response.content[0].text.replace(/```json|```/g, '').trim();
+  const parsed = JSON.parse(clean);
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+async function parseDoneTasks(message, pendingTasks) {
+  const tasksList = pendingTasks.map(t => t.id + ': ' + t.task).join('\n');
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 300,
+    messages: [{
+      role: 'user',
+      content: 'מתוך רשימת המשימות הבאה, זהה אילו משימות הושלמו לפי ההודעה.\nהחזר JSON בלבד עם מערך של מזהי המשימות שהושלמו:\n[1, 3, 5]\n\nרשימת משימות:\n' + tasksList + '\n\nהודעה: "' + message + '"'
+    }]
+  });
+  const clean = response.content[0].text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
+async function generateWeeklyTaskFeedback() {
+  const { getWeekTasks } = require('./tasks');
+  const tasks = getWeekTasks();
+  if (tasks.length === 0) return null;
+  const summary = tasks.map(t => t.date + ': ' + t.task + ' (' + (t.done ? 'הושלם' : 'לא הושלם') + ')').join('\n');
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: 'זה סיכום המשימות של השבוע האחרון:\n' + summary + '\n\nכתוב משוב קצר ומעודד בעברית על ההספקים, עם תובנה אחת מעשית לשבוע הבא.'
+    }]
+  });
+  return response.content[0].text;
 }
 
 async function handleMessage(message) {
@@ -86,6 +131,41 @@ async function handleMessage(message) {
     return await answerQuery(message);
   }
 
+  if (type === 'TOMORROW_TASKS') {
+    const tomorrow = getTomorrowDate();
+    const tasks = await parseTasks(message, tomorrow);
+    tasks.forEach(t => addTask(t.task, t.tip, tomorrow));
+    let text = 'משימות למחר נשמרו!\n';
+    tasks.forEach((t, i) => { text += (i+1) + '. ' + t.task + '\nטיפ: ' + t.tip + '\n'; });
+    return text.trim();
+  }
+
+  if (type === 'ADD_TASK') {
+    const today = getTodayDate();
+    const tasks = await parseTasks(message, today);
+    tasks.forEach(t => addTask(t.task, t.tip, today));
+    let text = 'נוסף לרשימה!\n';
+    tasks.forEach(t => { text += t.task + '\nטיפ: ' + t.tip + '\n'; });
+    return text.trim();
+  }
+
+  if (type === 'DONE_TASKS') {
+    const today = getTodayDate();
+    const pending = getPendingTasks(today);
+    if (pending.length === 0) return 'אין משימות פתוחות להיום.';
+    const doneIds = await parseDoneTasks(message, pending);
+    markDone(doneIds);
+    const remaining = getPendingTasks(today);
+    let text = 'מעולה! עדכנתי ' + doneIds.length + ' משימות כהושלמו.\n';
+    if (remaining.length > 0) {
+      text += 'נותר:\n';
+      remaining.forEach((t, i) => { text += (i+1) + '. ' + t.task + '\n'; });
+    } else {
+      text += 'סיימת את כל המשימות!';
+    }
+    return text.trim();
+  }
+
   const expenses = await parseExpenses(message);
   let text = 'נשמר!\n';
   let total = 0;
@@ -98,4 +178,4 @@ async function handleMessage(message) {
   return text.trim();
 }
 
-module.exports = { handleMessage };
+module.exports = { handleMessage, generateWeeklyTaskFeedback };
