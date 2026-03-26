@@ -2,9 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const cron = require('node-cron');
-const { handleMessage } = require('./agent');
+const { handleMessage, generateWeeklyTaskFeedback } = require('./agent');
 const { getWeeklySummary, getMonthlySummary } = require('./database');
 const { addWater, getTodayWater, resetDay } = require('./water');
+const { getTasks, getPendingTasks, getTodayDate } = require('./tasks');
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -25,9 +26,7 @@ async function sendWhatsApp(message) {
 app.post('/webhook', async (req, res) => {
   const incomingMsg = req.body.Body.trim();
   const from = req.body.From;
-
   console.log('הודעה מ-' + from + ': ' + incomingMsg);
-
   res.sendStatus(200);
 
   try {
@@ -75,6 +74,47 @@ cron.schedule('0 12 * * *', async () => {
 cron.schedule('0 10,14,16,18,20,22 * * *', async () => {
   const total = getTodayWater();
   if (total < 2000) await sendWhatsApp('תזכורת כוס מים!');
+}, { timezone: 'Asia/Jerusalem' });
+
+cron.schedule('30 7 * * *', async () => {
+  const today = getTodayDate();
+  const tasks = getTasks(today);
+  if (tasks.length > 0) {
+    let text = 'בוקר טוב! המשימות שלך להיום:\n';
+    tasks.forEach((t, i) => { text += (i+1) + '. ' + t.task + '\nטיפ: ' + t.tip + '\n'; });
+    await sendWhatsApp(text.trim());
+  } else {
+    await sendWhatsApp('בוקר טוב! מה המשימות שלך להיום?');
+  }
+}, { timezone: 'Asia/Jerusalem' });
+
+cron.schedule('0 12 * * *', async () => {
+  const today = getTodayDate();
+  const pending = getPendingTasks(today);
+  if (pending.length > 0) {
+    let text = 'בדיקת צהריים — מה הספקת?\nמשימות פתוחות:\n';
+    pending.forEach((t, i) => { text += (i+1) + '. ' + t.task + '\n'; });
+    await sendWhatsApp(text.trim());
+  }
+}, { timezone: 'Asia/Jerusalem' });
+
+cron.schedule('0 19 * * *', async () => {
+  const today = getTodayDate();
+  const pending = getPendingTasks(today);
+  if (pending.length > 0) {
+    let text = 'בדיקת ערב — מה הספקת?\nנותר:\n';
+    pending.forEach((t, i) => { text += (i+1) + '. ' + t.task + '\n'; });
+    await sendWhatsApp(text.trim());
+  }
+}, { timezone: 'Asia/Jerusalem' });
+
+cron.schedule('0 21 * * *', async () => {
+  await sendWhatsApp('מה המשימות שלך למחר?');
+}, { timezone: 'Asia/Jerusalem' });
+
+cron.schedule('0 21 * * 5', async () => {
+  const feedback = await generateWeeklyTaskFeedback();
+  if (feedback) await sendWhatsApp('משוב שבועי:\n' + feedback);
 }, { timezone: 'Asia/Jerusalem' });
 
 const PORT = 3000;
