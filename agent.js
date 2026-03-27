@@ -11,8 +11,7 @@ async function classifyMessage(message) {
     max_tokens: 50,
     messages: [{
       role: 'user',
-      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה כספית עם סכום\n- DELETE_EXPENSE: מחיקת הוצאה כספית\n- QUERY: שאלה על הוצאות\n- WEEKLY: סיכום שבועי הוצאות\n- MONTHLY: סיכום חודשי הוצאות\n- SHOW_TASKS: בקשה לראות את משימות היום בלבד
-- SHOW_WEEK_TASKS: בקשה לראות משימות לשבוע הקרוב או לוז שבועי\n- DONE_TASKS: דיווח על משימות שסיים\n- DELETE_TASK: מחיקת משימה לפי מספר\n- ADD_TASK: הוספת משימה להיום\n- TOMORROW_TASKS: משימות למחר במפורש\n- WEEK_DAY_TASK: הוספת משימה ליום ספציפי בשבוע (מכיל שם יום כמו ראשון/שני/שלישי)\n\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
+      content: 'סווג את ההודעה לאחת מהקטגוריות:\n- EXPENSE\n- DELETE_EXPENSE\n- QUERY\n- WEEKLY\n- MONTHLY\n- SHOW_TASKS\n- SHOW_WEEK_TASKS\n- DONE_TASKS\n- DELETE_TASK\n- ADD_TASK\n- TOMORROW_TASKS\n- WEEK_DAY_TASK\n\nכללים:\n- SHOW_WEEK_TASKS: בקשה לוז שבועי או משימות לשבוע\n- SHOW_TASKS: הצג משימות היום\n- WEEK_DAY_TASK: הוספה ליום ספציפי (ראשון/שני וכו)\n- TOMORROW_TASKS: משימות למחר במפורש\n- ADD_TASK: רשימה ממוספרת ללא ציון יום\n- DONE_TASKS: דיווח על ביצוע\n- DELETE_TASK: מחיקה לפי מספר\n- DELETE_EXPENSE: מחיקת הוצאה\n\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
     }]
   });
   return response.content[0].text.trim();
