@@ -1,7 +1,7 @@
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const { saveExpense, deleteLastExpense, queryExpenses, getWeeklySummary, getMonthlySummary } = require('./database');
-const { addTask, getPendingTasks, markDone, getTasks, getTodayDate, getTomorrowDate } = require('./tasks');
+const { addTask, getPendingTasks, markDone, getTasks, getTodayDate, getTomorrowDate, getDateForDay, deleteTaskByOrder } = require('./tasks');
 
 const client = new Anthropic();
 
@@ -11,7 +11,7 @@ async function classifyMessage(message) {
     max_tokens: 50,
     messages: [{
       role: 'user',
-      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה כספית עם סכום\n- DELETE: מחיקת הוצאה\n- QUERY: שאלה על הוצאות\n- WEEKLY: סיכום שבועי הוצאות\n- MONTHLY: סיכום חודשי הוצאות\n- DONE_TASKS: דיווח על משימות שסיים (מכיל מילים כמו סיימתי/עשיתי/גמרתי או מספרים של משימות)\n- ADD_TASK: הוספת משימה או רשימת משימות להיום (כולל רשימות ממוספרות ללא ציון מחר)\n- TOMORROW_TASKS: רשימת משימות שמיועדת במפורש למחר (מכיל את המילה מחר)\n\nשים לב: רשימה ממוספרת ללא המילה מחר = ADD_TASK.\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
+      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה כספית עם סכום\n- DELETE_EXPENSE: מחיקת הוצאה כספית\n- QUERY: שאלה על הוצאות\n- WEEKLY: סיכום שבועי הוצאות\n- MONTHLY: סיכום חודשי הוצאות\n- SHOW_TASKS: בקשה לראות את רשימת המשימות\n- DONE_TASKS: דיווח על משימות שסיים\n- DELETE_TASK: מחיקת משימה לפי מספר\n- ADD_TASK: הוספת משימה להיום\n- TOMORROW_TASKS: משימות למחר במפורש\n- WEEK_DAY_TASK: הוספת משימה ליום ספציפי בשבוע (מכיל שם יום כמו ראשון/שני/שלישי)\n\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
     }]
   });
   return response.content[0].text.trim();
@@ -43,7 +43,6 @@ async function answerQuery(message) {
   });
   const sql = response.content[0].text.replace(/```sql|```/g, '').trim();
   const fixedSql = sql.replace(/"/g, "'");
-  console.log('SQL:', fixedSql);
   const rows = queryExpenses(fixedSql);
   if (!rows || rows.length === 0) return 'לא נמצאו הוצאות.';
   let text = '';
@@ -56,7 +55,7 @@ async function answerQuery(message) {
   return text.trim();
 }
 
-async function parseTasks(message, date) {
+async function parseTasks(message) {
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1000,
@@ -70,18 +69,44 @@ async function parseTasks(message, date) {
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
+async function parseWeekDayTask(message) {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 200,
+    messages: [{
+      role: 'user',
+      content: 'חלץ מההודעה את שם היום בשבוע ואת המשימה.\nהחזר JSON בלבד ללא backticks:\n{"day": "שני", "task": "שם המשימה", "tip": "טיפ קצר"}\n\nהודעה: "' + message + '"'
+    }]
+  });
+  const clean = response.content[0].text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
+async function parseDeleteTask(message) {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 50,
+    messages: [{
+      role: 'user',
+      content: 'חלץ את מספר המשימה למחיקה מההודעה. החזר רק את המספר.\n\nהודעה: "' + message + '"'
+    }]
+  });
+  return parseInt(response.content[0].text.trim());
+}
+
 async function parseDoneTasks(message, pendingTasks) {
-  const tasksList = pendingTasks.map(t => t.id + ': ' + t.task).join('\n');
+  const tasksList = pendingTasks.map(t => t.day_order + ': ' + t.task).join('\n');
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 300,
     messages: [{
       role: 'user',
-      content: 'מתוך רשימת המשימות הבאה, זהה אילו משימות הושלמו לפי ההודעה.\nהחזר JSON בלבד עם מערך של מזהי המשימות שהושלמו:\n[1, 3, 5]\n\nרשימת משימות:\n' + tasksList + '\n\nהודעה: "' + message + '"'
+      content: 'מתוך רשימת המשימות הבאה, זהה אילו משימות הושלמו לפי ההודעה.\nהחזר JSON בלבד עם מערך של מספרי הסדר:\n[1, 3]\n\nרשימת משימות:\n' + tasksList + '\n\nהודעה: "' + message + '"'
     }]
   });
   const clean = response.content[0].text.replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
+  const orders = JSON.parse(clean);
+  return pendingTasks.filter(t => orders.includes(t.day_order)).map(t => t.id);
 }
 
 async function generateWeeklyTaskFeedback() {
@@ -98,6 +123,22 @@ async function generateWeeklyTaskFeedback() {
     }]
   });
   return response.content[0].text;
+}
+
+function formatTasksList(tasks) {
+  if (tasks.length === 0) return 'אין משימות.';
+  let pending = tasks.filter(t => !t.done);
+  let done = tasks.filter(t => t.done);
+  let text = '';
+  if (pending.length > 0) {
+    text += 'משימות פתוחות:\n';
+    pending.forEach(t => { text += t.day_order + '. ' + t.task + '\n'; });
+  }
+  if (done.length > 0) {
+    text += '\nהושלמו:\n';
+    done.forEach(t => { text += t.day_order + '. ' + t.task + '\n'; });
+  }
+  return text.trim();
 }
 
 async function handleMessage(message) {
@@ -122,7 +163,7 @@ async function handleMessage(message) {
     return text + 'סהכ: ' + total + ' שקל';
   }
 
-  if (type === 'DELETE') {
+  if (type === 'DELETE_EXPENSE') {
     const deleted = deleteLastExpense();
     return deleted ? 'ההוצאה האחרונה נמחקה.' : 'לא נמצאה הוצאה למחיקה.';
   }
@@ -131,21 +172,48 @@ async function handleMessage(message) {
     return await answerQuery(message);
   }
 
+  if (type === 'SHOW_TASKS') {
+    const today = getTodayDate();
+    const tasks = getTasks(today);
+    return formatTasksList(tasks);
+  }
+
+  if (type === 'DELETE_TASK') {
+    const today = getTodayDate();
+    const order = await parseDeleteTask(message);
+    const deleted = deleteTaskByOrder(today, order);
+    if (!deleted) return 'לא נמצאה משימה מספר ' + order;
+    const tasks = getTasks(today);
+    let text = 'משימה ' + order + ' בוצעה ונמחקה.\n\n';
+    text += formatTasksList(tasks);
+    return text.trim();
+  }
+
   if (type === 'TOMORROW_TASKS') {
     const tomorrow = getTomorrowDate();
-    const tasks = await parseTasks(message, tomorrow);
+    const tasks = await parseTasks(message);
     tasks.forEach(t => addTask(t.task, t.tip, tomorrow));
     let text = 'משימות למחר נשמרו!\n';
-    tasks.forEach((t, i) => { text += (i+1) + '. ' + t.task + '\nטיפ: ' + t.tip + '\n'; });
+    const allTasks = getTasks(tomorrow);
+    allTasks.forEach(t => { text += t.day_order + '. ' + t.task + '\n'; });
     return text.trim();
+  }
+
+  if (type === 'WEEK_DAY_TASK') {
+    const parsed = await parseWeekDayTask(message);
+    const date = getDateForDay(parsed.day);
+    if (!date) return 'לא הבנתי איזה יום.';
+    const order = addTask(parsed.task, parsed.tip, date);
+    return 'נוסף ליום ' + parsed.day + ' הקרוב!\n' + order + '. ' + parsed.task + '\nטיפ: ' + parsed.tip;
   }
 
   if (type === 'ADD_TASK') {
     const today = getTodayDate();
-    const tasks = await parseTasks(message, today);
+    const tasks = await parseTasks(message);
     tasks.forEach(t => addTask(t.task, t.tip, today));
-    let text = 'נוסף לרשימה!\n';
-    tasks.forEach(t => { text += t.task + '\nטיפ: ' + t.tip + '\n'; });
+    const allTasks = getTasks(today);
+    let text = 'נוסף לרשימה!\n\n';
+    text += formatTasksList(allTasks);
     return text.trim();
   }
 
@@ -155,14 +223,9 @@ async function handleMessage(message) {
     if (pending.length === 0) return 'אין משימות פתוחות להיום.';
     const doneIds = await parseDoneTasks(message, pending);
     markDone(doneIds);
-    const remaining = getPendingTasks(today);
-    let text = 'מעולה! עדכנתי ' + doneIds.length + ' משימות כהושלמו.\n';
-    if (remaining.length > 0) {
-      text += 'נותר:\n';
-      remaining.forEach((t, i) => { text += (i+1) + '. ' + t.task + '\n'; });
-    } else {
-      text += 'סיימת את כל המשימות!';
-    }
+    const allTasks = getTasks(today);
+    let text = 'מעולה! עדכנתי ' + doneIds.length + ' משימות.\n\n';
+    text += formatTasksList(allTasks);
     return text.trim();
   }
 
