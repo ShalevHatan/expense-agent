@@ -4,7 +4,7 @@ const twilio = require('twilio');
 const cron = require('node-cron');
 const { handleMessage, generateWeeklyTaskFeedback } = require('./agent');
 const { getWeeklySummary, getMonthlySummary } = require('./database');
-const { addWater, getTodayWater, resetDay } = require('./water');
+const { addWater, getTodayWater, resetDay, parseAmount } = require('./water');
 const { getTasks, getPendingTasks, getTodayDate, addTask } = require('./tasks');
 const { getTodayClasses } = require('./schedule');
 
@@ -31,8 +31,8 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 
   try {
-    if (incomingMsg === 'שתיתי') {
-      const total = addWater();
+    if (incomingMsg.startsWith('שתיתי') || incomingMsg.startsWith('בוצע')) {
+      const ml = parseAmount(incomingMsg); const total = addWater(ml);
       const remaining = 2000 - total;
       let reply = 'שתית ' + total + '/2000 מ״ל';
       if (remaining <= 0) reply += '\nכל הכבוד! הגעת ליעד היומי!';

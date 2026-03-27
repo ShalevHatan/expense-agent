@@ -13,9 +13,16 @@ function getTodayDate() {
   return new Date().toLocaleDateString('en-CA', {timeZone: 'Asia/Jerusalem'});
 }
 
-function addWater() {
+function parseAmount(message) {
+  const num = message.match(/\d+/);
+  if (num) return parseInt(num[0]);
+  if (message.includes('בקבוק')) return 500;
+  return 200;
+}
+
+function addWater(ml) {
   const today = getTodayDate();
-  db.prepare('INSERT INTO water (date, ml) VALUES (?, 200)').run(today);
+  db.prepare('INSERT INTO water (date, ml) VALUES (?, ?)').run(today, ml);
   const total = db.prepare('SELECT SUM(ml) as total FROM water WHERE date = ?').get(today);
   return total.total || 0;
 }
@@ -31,4 +38,4 @@ function resetDay() {
   db.prepare('DELETE FROM water WHERE date = ?').run(today);
 }
 
-module.exports = { addWater, getTodayWater, resetDay };
+module.exports = { addWater, getTodayWater, resetDay, parseAmount };
