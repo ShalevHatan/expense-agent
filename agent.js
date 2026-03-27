@@ -1,7 +1,7 @@
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const { saveExpense, deleteLastExpense, queryExpenses, getWeeklySummary, getMonthlySummary } = require('./database');
-const { addTask, getPendingTasks, markDone, getTasks, getTodayDate, getTomorrowDate, getDateForDay, deleteTaskByOrder } = require('./tasks');
+const { addTask, getPendingTasks, markDone, getTasks, getTodayDate, getTomorrowDate, getDateForDay, deleteTaskByOrder, getWeekAheadTasks } = require('./tasks');
 
 const client = new Anthropic();
 
@@ -11,7 +11,8 @@ async function classifyMessage(message) {
     max_tokens: 50,
     messages: [{
       role: 'user',
-      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה כספית עם סכום\n- DELETE_EXPENSE: מחיקת הוצאה כספית\n- QUERY: שאלה על הוצאות\n- WEEKLY: סיכום שבועי הוצאות\n- MONTHLY: סיכום חודשי הוצאות\n- SHOW_TASKS: בקשה לראות את רשימת המשימות\n- DONE_TASKS: דיווח על משימות שסיים\n- DELETE_TASK: מחיקת משימה לפי מספר\n- ADD_TASK: הוספת משימה להיום\n- TOMORROW_TASKS: משימות למחר במפורש\n- WEEK_DAY_TASK: הוספת משימה ליום ספציפי בשבוע (מכיל שם יום כמו ראשון/שני/שלישי)\n\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
+      content: 'סווג את ההודעה הבאה לאחת מהקטגוריות:\n- EXPENSE: הוצאה כספית עם סכום\n- DELETE_EXPENSE: מחיקת הוצאה כספית\n- QUERY: שאלה על הוצאות\n- WEEKLY: סיכום שבועי הוצאות\n- MONTHLY: סיכום חודשי הוצאות\n- SHOW_TASKS: בקשה לראות את משימות היום בלבד
+- SHOW_WEEK_TASKS: בקשה לראות משימות לשבוע הקרוב או לוז שבועי\n- DONE_TASKS: דיווח על משימות שסיים\n- DELETE_TASK: מחיקת משימה לפי מספר\n- ADD_TASK: הוספת משימה להיום\n- TOMORROW_TASKS: משימות למחר במפורש\n- WEEK_DAY_TASK: הוספת משימה ליום ספציפי בשבוע (מכיל שם יום כמו ראשון/שני/שלישי)\n\nהחזר רק את המילה.\n\nהודעה: "' + message + '"'
     }]
   });
   return response.content[0].text.trim();
@@ -170,6 +171,20 @@ async function handleMessage(message) {
 
   if (type === 'QUERY') {
     return await answerQuery(message);
+  }
+
+  if (type === 'SHOW_WEEK_TASKS') {
+    const week = getWeekAheadTasks();
+    if (week.length === 0) return 'אין משימות לשבוע הקרוב.';
+    let text = 'לוז שבועי:\n';
+    week.forEach(day => {
+      text += '\nיום ' + day.dayName + ' (' + day.date + '):\n';
+      day.tasks.forEach(t => {
+        const status = t.done ? 'v' : '-';
+        text += status + ' ' + t.day_order + '. ' + t.task + '\n';
+      });
+    });
+    return text.trim();
   }
 
   if (type === 'SHOW_TASKS') {

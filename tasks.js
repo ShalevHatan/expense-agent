@@ -75,4 +75,20 @@ function getWeekTasks() {
   return db.prepare('SELECT * FROM tasks WHERE date >= ? ORDER BY date, day_order').all(weekAgo);
 }
 
-module.exports = { addTask, getTasks, getPendingTasks, markDone, deleteTaskByOrder, getWeekTasks, getTodayDate, getTomorrowDate, getDateForDay };
+function getWeekAheadTasks() {
+  const today = new Date(new Date().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'}));
+  const dayNames = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+  const result = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const date = d.toLocaleDateString('en-CA', {timeZone: 'Asia/Jerusalem'});
+    const tasks = db.prepare('SELECT * FROM tasks WHERE date = ? ORDER BY day_order').all(date);
+    if (tasks.length > 0) {
+      result.push({ date, dayName: dayNames[d.getDay()], tasks });
+    }
+  }
+  return result;
+}
+
+module.exports = { addTask, getTasks, getPendingTasks, markDone, deleteTaskByOrder, getWeekTasks, getWeekAheadTasks, getTodayDate, getTomorrowDate, getDateForDay };
